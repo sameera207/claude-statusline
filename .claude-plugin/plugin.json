@@ -1,12 +1,9 @@
 {
   "name": "claude-statusline",
   "version": "1.0.0",
-  "author": "sameera207",
   "description": "Displays a one-line status bar showing context usage, model, git branch, and session time at the bottom of every Claude Code session.",
-  "hooks": {
-    "statusLine": {
-      "type": "command",
-      "command": "python3 hooks/statusline.py"
-    }
+  "author": {
+    "name": "sameera207",
+    "email": "sameera207@gmail.com"
   }
 }
