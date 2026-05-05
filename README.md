@@ -3,7 +3,7 @@
 A Claude Code plugin that renders a one-line status bar at the bottom of every session.
 
 ```
-⎇ main  │  ████████░░░░░░░░  45%  136k/200k  │  sonnet-4-6  │  ⏱ 42m
+⎇ main  │  ████████░░░░░░░░  45%  90k/200k  │  ↑1.7k ↓35k  │  Sonnet 4.6  │  ⏱ 42m
 ```
 
 The bar is colour-coded by context usage:
@@ -21,43 +21,28 @@ The bar is colour-coded by context usage:
 
 ## Installation
 
-### 1. Copy the plugin into place
+Install via the [sameera207 plugin marketplace](https://github.com/sameera207/claude-plugins#installation).
 
-```bash
-mkdir -p ~/.claude/plugins/statusline/hooks
-cp hooks/statusline.py ~/.claude/plugins/statusline/hooks/statusline.py
-chmod +x ~/.claude/plugins/statusline/hooks/statusline.py
+Inside Claude Code:
+
+```
+/plugin marketplace add sameera207/claude-plugins
+/plugin install claude-statusline@sameera207
 ```
 
-### 2. Register the status line in `~/.claude/settings.json`
-
-Add the following to your `~/.claude/settings.json`:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "python3 ~/.claude/plugins/statusline/hooks/statusline.py"
-  }
-}
-```
-
-If you already have a `settings.json`, merge the `statusLine` key into the existing object.
-
-### 3. Restart Claude Code
-
-Close and reopen any Claude Code sessions to activate the status bar.
+The plugin auto-configures itself on first run — no manual settings edits needed.
 
 ## What each segment shows
 
 | Segment | Source |
 |---------|--------|
 | `⎇ main` | Current git branch (`git branch --show-current`) |
-| `████████░░░░░░░░  45%  136k/200k` | Context window usage — 16-char bar, percentage, token counts |
-| `sonnet-4-6` | Active model (`claude-` prefix stripped) |
+| `████████░░░░░░░░  45%  90k/200k` | Context window usage — 16-char bar, percentage, effective tokens / window size |
+| `↑1.7k ↓35k` | Session-total billed input (↑) and output (↓) tokens |
+| `Sonnet 4.6` | Active model (`claude-` prefix stripped) |
 | `⏱ 42m` | Elapsed session time |
 
-Token counts are formatted as `136k` / `200k` / `1.5M` / `1M` depending on magnitude.
+Token counts are formatted as `1.7k` / `35k` / `1.5M` depending on magnitude.
 
 ## How it works
 
