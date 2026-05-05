@@ -5,5 +5,9 @@
   "author": {
     "name": "sameera207",
     "email": "sameera207@gmail.com"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/statusline.py\""
   }
 }
