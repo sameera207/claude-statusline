@@ -3,7 +3,7 @@
 Claude Code statusline plugin.
 
 Renders a one-line status bar:
-  ⎇ main  │  ████████░░░░░░░░  45%  136k/200k  │  claude-sonnet-4-6  │  ⏱ 42m
+  ⎇ main  │  ████████░░░░░░░░  39%  78k/200k  │  ↑1.7k ↓35k  │  Sonnet 4.6  │  ⏱ 29m
 
 Reads JSON from stdin on every tick; never crashes — errors are suppressed.
 Stdlib only, no third-party dependencies.
@@ -11,11 +11,9 @@ Stdlib only, no third-party dependencies.
 from __future__ import annotations
 
 import json
-import math
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
 
 
 # ── ANSI colours ────────────────────────────────────────────────────────────
@@ -37,16 +35,11 @@ def colour_for(pct: float) -> str:
 # ── Token formatting ─────────────────────────────────────────────────────────
 
 def fmt_tokens(n: int) -> str:
-    """Format a token count as e.g. '136k' or '1M'."""
     if n >= 1_000_000:
         val = n / 1_000_000
-        if val == int(val):
-            return f"{int(val)}M"
         return f"{val:.1f}M".rstrip("0").rstrip(".")
     if n >= 1_000:
         val = n / 1_000
-        if val == int(val):
-            return f"{int(val)}k"
         return f"{val:.1f}k".rstrip("0").rstrip(".")
     return str(n)
 
@@ -58,28 +51,19 @@ BAR_WIDTH = 16
 def progress_bar(pct: float) -> str:
     filled = round(BAR_WIDTH * pct / 100)
     filled = max(0, min(BAR_WIDTH, filled))
-    empty  = BAR_WIDTH - filled
-    return "█" * filled + "░" * empty
+    return "█" * filled + "░" * (BAR_WIDTH - filled)
 
 
 # ── Session time ─────────────────────────────────────────────────────────────
 
-def fmt_elapsed(started_at: str) -> str:
-    """Return '⏱ 42m' or '⏱ 1h 24m' from an ISO-8601 timestamp."""
-    try:
-        # Accept both Z-suffix and +00:00 formats
-        started_at = started_at.replace("Z", "+00:00")
-        start = datetime.fromisoformat(started_at)
-        now   = datetime.now(timezone.utc)
-        total_secs = max(0, int((now - start).total_seconds()))
-        minutes = total_secs // 60
-        hours   = minutes // 60
-        mins    = minutes % 60
-        if hours > 0:
-            return f"⏱ {hours}h {mins}m"
-        return f"⏱ {minutes}m"
-    except Exception:
-        return "⏱ --"
+def fmt_duration_ms(ms: float) -> str:
+    total_secs = max(0, int(ms / 1000))
+    minutes    = total_secs // 60
+    hours      = minutes // 60
+    mins       = minutes % 60
+    if hours > 0:
+        return f"⏱ {hours}h {mins}m"
+    return f"⏱ {minutes}m"
 
 
 # ── Git branch ────────────────────────────────────────────────────────────────
@@ -88,9 +72,7 @@ def git_branch() -> str:
     try:
         result = subprocess.run(
             ["git", "branch", "--show-current"],
-            capture_output=True,
-            text=True,
-            timeout=1,
+            capture_output=True, text=True, timeout=1,
         )
         branch = result.stdout.strip()
         return branch if branch else "HEAD"
@@ -101,7 +83,6 @@ def git_branch() -> str:
 # ── Model name ────────────────────────────────────────────────────────────────
 
 def fmt_model(display_name: str) -> str:
-    """Strip leading 'claude-' prefix for display."""
     name = display_name.strip()
     if name.lower().startswith("claude-"):
         name = name[len("claude-"):]
@@ -111,54 +92,64 @@ def fmt_model(display_name: str) -> str:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def render(data: dict) -> str:
-    # ── git branch ──────────────────────────────────────────────────────────
+    # git branch
     branch = git_branch()
-    branch_segment = f"⎇ {branch}  " if branch else ""
+    branch_segment = f"⎇ {branch}" if branch else ""
 
-    # ── context window ───────────────────────────────────────────────────────
-    ctx = data.get("context_window") or {}
-    usage = data.get("current_usage") or {}
+    # context window — current_usage is nested inside context_window
+    ctx   = data.get("context_window") or {}
+    usage = ctx.get("current_usage") or {}
 
-    # used_percentage is the authoritative source; fall back to calculating
     pct_raw = ctx.get("used_percentage")
     if pct_raw is None:
-        used   = usage.get("input_tokens", 0) or 0
-        limit  = ctx.get("context_window_size") or 0
-        pct_raw = (used / limit * 100) if limit else 0
+        effective = (
+            usage.get("input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0)
+            + usage.get("cache_read_input_tokens", 0)
+        )
+        limit   = ctx.get("context_window_size") or 0
+        pct_raw = (effective / limit * 100) if limit else 0
 
-    pct   = float(pct_raw)
-    col   = colour_for(pct)
-    bar   = progress_bar(pct)
+    pct = float(pct_raw)
+    col = colour_for(pct)
+    bar = progress_bar(pct)
 
-    used_tokens  = usage.get("input_tokens") or ctx.get("used_tokens") or 0
-    total_tokens = ctx.get("context_window_size") or 0
-
-    token_label = ""
-    if total_tokens:
-        token_label = f"  {fmt_tokens(int(used_tokens))}/{fmt_tokens(int(total_tokens))}"
-
-    context_segment = (
-        f"{col}{bar}  {pct:.0f}%{token_label}{RESET}"
+    # effective context used (all input types combined)
+    ctx_used = (
+        usage.get("input_tokens", 0)
+        + usage.get("cache_creation_input_tokens", 0)
+        + usage.get("cache_read_input_tokens", 0)
     )
+    ctx_total = ctx.get("context_window_size") or 0
 
-    # ── model ────────────────────────────────────────────────────────────────
+    ctx_label = ""
+    if ctx_total:
+        ctx_label = f"  {fmt_tokens(int(ctx_used))}/{fmt_tokens(int(ctx_total))}"
+
+    context_segment = f"{col}{bar}  {pct:.0f}%{ctx_label}{RESET}"
+
+    # session-total input/output tokens (for cost awareness)
+    total_in  = ctx.get("total_input_tokens", 0)
+    total_out = ctx.get("total_output_tokens", 0)
+    io_segment = ""
+    if total_in or total_out:
+        io_segment = f"↑{fmt_tokens(int(total_in))} ↓{fmt_tokens(int(total_out))}"
+
+    # model
     model_raw  = (data.get("model") or {}).get("display_name", "")
-    model_name = fmt_model(model_raw) if model_raw else ""
-    model_segment = model_name if model_name else ""
+    model_segment = fmt_model(model_raw) if model_raw else ""
 
-    # ── elapsed time ─────────────────────────────────────────────────────────
-    started_at = (data.get("session") or {}).get("started_at", "")
-    time_segment = fmt_elapsed(started_at) if started_at else ""
+    # session time from cost.total_duration_ms
+    duration_ms = (data.get("cost") or {}).get("total_duration_ms")
+    time_segment = fmt_duration_ms(duration_ms) if duration_ms else ""
 
-    # ── assemble ─────────────────────────────────────────────────────────────
-    parts = []
-    if branch_segment:
-        parts.append(branch_segment.rstrip())
-    parts.append(context_segment)
-    if model_segment:
-        parts.append(model_segment)
-    if time_segment:
-        parts.append(time_segment)
+    parts = [p for p in [
+        branch_segment,
+        context_segment,
+        io_segment,
+        model_segment,
+        time_segment,
+    ] if p]
 
     return "  │  ".join(parts)
 
@@ -174,7 +165,6 @@ def main() -> None:
         line = render(data)
         sys.stdout.write(line + "\n")
     except Exception:
-        # Never crash the session; print a minimal placeholder
         sys.stdout.write("⎇ ?  │  ░░░░░░░░░░░░░░░░  --%\n")
 
 
